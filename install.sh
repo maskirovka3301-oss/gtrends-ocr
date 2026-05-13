@@ -3,7 +3,7 @@ set -e
 
 ENV_NAME="gtrends-ocr"
 
-echo "🔍 Forcefully removing python=3.13 pin..."
+echo "🔍 Removing python=3.13 pin..."
 conda config --remove-key pinned_packages 2>/dev/null || true
 conda config --remove pinned_packages python=3.13 2>/dev/null || true
 for condarc in ~/.condarc ~/miniconda3/.condarc ~/anaconda3/.condarc; do
@@ -18,17 +18,27 @@ conda env remove -n "$ENV_NAME" -y 2>/dev/null || true
 echo "📦 Creating environment with Python 3.11..."
 conda create -n "$ENV_NAME" python=3.11 -y
 
-echo "🚀 Installing packages via pip & conda..."
+echo "🚀 Installing HuggingFace & vision model dependencies..."
 conda run -n "$ENV_NAME" pip install --upgrade pip
-conda run -n "$ENV_NAME" pip install torch torchvision easyocr opencv-python Pillow numpy
-conda install -c conda-forge tesseract -y  # System OCR binary
-conda run -n "$ENV_NAME" pip install pytesseract  # Python binding
+conda run -n "$ENV_NAME" pip install openai requests pillow numpy opencv-python
 
-echo "✅ Verifying installation..."
-conda run -n "$ENV_NAME" python -c "
-import torch, easyocr, cv2, pytesseract
-print(f'✅ PyTorch {torch.__version__}')
-print(f'✅ EasyOCR ready')
-print(f'✅ Tesseract version: {pytesseract.get_tesseract_version()}')
-"
-echo "🎉 Environment ready! Run: conda activate $ENV_NAME"
+echo "🔑 Setting up HuggingFace API access..."
+echo ""
+echo "⚠️  IMPORTANT: You need a HuggingFace API token to use Kimi-K2.6"
+echo "Get one at: https://huggingface.co/settings/tokens"
+echo ""
+read -p "Enter your HuggingFace API token (or press Enter to set later): " HF_TOKEN
+if [[ -n "$HF_TOKEN" ]]; then
+    echo "export HUGGINGFACE_API_KEY='$HF_TOKEN'" >> ~/.bashrc
+    export HUGGINGFACE_API_KEY="$HF_TOKEN"
+    echo "✅ Token saved to ~/.bashrc and current session"
+else
+    echo "⚠️  You'll need to set HUGGINGFACE_API_KEY environment variable before running"
+    echo "   export HUGGINGFACE_API_KEY='your_token_here'"
+fi
+
+echo "✅ Environment ready! Run: conda activate $ENV_NAME"
+echo ""
+echo "📝 To use the script, set your API key:"
+echo "   export HUGGINGFACE_API_KEY='hf_xxxxx'"
+echo "   ./run.sh test"
