@@ -66,6 +66,7 @@ All extracted data remains local, offline-capable, and fully exportable for stat
 - Optimizations for different sources of screenshots still have to be implemented (Desktop, iPad, etc).
 - Only tested for now with Classic Google Trends, not screenshots from the new AI version.
 - Work is still being done on the ability to extract time series from multi-keyword (comparison) screenshots - this is hard because the trend lines intersect and obscure each other.
+- Currently only MacOS is supported and tested, future work will make it more portable.
 
 ---
 
