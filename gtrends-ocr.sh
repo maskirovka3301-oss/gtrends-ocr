@@ -22,4 +22,4 @@ echo "Launching with background priority + nice + memory limit..."
 # taskpolicy -m <MiB> is the native way on macOS
 taskpolicy -b -m "$LIMIT_MB" \
     nice -n 10 \
-    python gtrends-ocr.py "$@" --workers 8
+    python gtrends-ocr.py "$@" --workers 1
