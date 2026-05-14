@@ -5,6 +5,7 @@ Google Trends Screenshot Organizer using Qwen/Qwen3-VL-2B-Instruct
 - Downloads model ONCE to ./models/ directory
 - Auto-retries with contextual hints if GTrends fields are missing
 - Injects filename-extracted datetime into the final JSON
+- Deterministic chart timeseries extraction via chart_extract module
 """
 import os
 import re
@@ -22,8 +23,9 @@ from typing import Optional, Dict, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 
-# Dependency guards
-for pkg in ["transformers", "torch", "accelerate", "pydantic", "tiktoken", "regex", "packaging", "huggingface_hub"]:
+# Dependency guards (includes chart extractor dependencies)
+for pkg in ["transformers", "torch", "accelerate", "pydantic", "tiktoken", "regex", 
+            "packaging", "huggingface_hub", "numpy", "cv2", "scipy"]:
     try:
         __import__(pkg)
     except ImportError:
@@ -32,12 +34,15 @@ for pkg in ["transformers", "torch", "accelerate", "pydantic", "tiktoken", "rege
         raise
 
 import torch
-from transformers import AutoProcessor, AutoModelForVision2Seq
+import numpy as np
+import cv2
+from transformers import AutoProcessor, AutoModelForImageTextToText
 from huggingface_hub import snapshot_download
 from config import (
     GEO_PICKER, ALL_COUNTRIES, TIME_RANGES, CATEGORIES, LOCALES, GTRENDS_UI_KEYWORDS,
     get_country_name, get_country_code, is_valid_country_code, is_valid_time_range, is_valid_category
 )
+from chart_extract import extract_and_interpolate_trends
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +53,6 @@ logging.basicConfig(
 SUPPORTED_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.webp', '.gif'}
 MODEL_REPO = "Qwen/Qwen3-VL-2B-Instruct"
 
-# Persistent local model directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_MODEL_DIR = os.path.join(SCRIPT_DIR, "models", "Qwen3-VL-2B-Instruct")
 
@@ -100,7 +104,7 @@ def load_model():
                 trust_remote_code=True,
                 local_files_only=True
             )
-            _model = AutoModelForVision2Seq.from_pretrained(
+            _model = AutoModelForImageTextToText.from_pretrained(
                 LOCAL_MODEL_DIR,
                 torch_dtype=torch_dtype,
                 device_map=device_map,
@@ -177,10 +181,8 @@ def extract_metadata_with_qwen3vl(image_path: str, filename: str) -> Tuple[Optio
         prompt_text = processor.apply_chat_template(messages, add_generation_prompt=True, tokenize=False)
         inputs = processor(text=prompt_text, images=image, return_tensors="pt").to(model.device)
 
-        logging.debug("🔄 Running initial inference...")
         with torch.no_grad():
             generated_ids = model.generate(**inputs, max_new_tokens=512, do_sample=False, temperature=0.0)
-
         generated_ids_trimmed = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)]
         generated_text = processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
         logging.info(f"🔍 Raw model output: {repr(generated_text[:300])}")
@@ -212,7 +214,7 @@ def extract_metadata_with_qwen3vl(image_path: str, filename: str) -> Tuple[Optio
                     missing_fields.append("date_range")
 
                 if not missing_fields:
-                    break  # All fields present
+                    break
 
                 logging.info(f"🔁 Retry {attempt+1}/{max_retries}: Missing {missing_fields}. Re-prompting with hints...")
                 hints = []
@@ -245,7 +247,6 @@ def extract_metadata_with_qwen3vl(image_path: str, filename: str) -> Tuple[Optio
 
                 new_json = extract_strict_json(retry_output)
                 if new_json and isinstance(new_json, dict):
-                    # Merge new values into current_json, preserving existing valid fields
                     current_json.update(new_json)
                     if not isinstance(current_json.get("search_terms"), list):
                         current_json["search_terms"] = []
@@ -253,9 +254,7 @@ def extract_metadata_with_qwen3vl(image_path: str, filename: str) -> Tuple[Optio
                     logging.warning("⚠️  Retry did not return valid JSON. Stopping retries.")
                     break
 
-        # Inject filename-extracted datetime into the JSON as requested
         current_json["filename_datetime"] = extract_datetime_from_filename(filename)
-
         confidence = 0.85 if current_json.get('is_google_trends', False) else 0.4
         return current_json, confidence
 
@@ -344,12 +343,27 @@ def process_single(filepath: Path, identified_dir: Path, unidentified_dir: Path,
         metadata = validate_and_normalize_metadata(extracted, filename)
 
         if metadata and metadata['terms']:
+            # 📈 Extract deterministic chart timeseries using pixel analysis
+            chart_series = None
+            try:
+                logging.info("📈 Extracting chart timeseries via pixel scanning...")
+                chart_series = extract_and_interpolate_trends(str(filepath))
+                if chart_series and len(chart_series) == 2048:
+                    logging.info("✅ Chart extraction successful: 2048 points")
+                else:
+                    logging.warning("⚠️ Chart extraction returned unexpected data length")
+                    chart_series = None
+            except Exception as e:
+                logging.warning(f"⚠️ Chart extraction failed: {e}")
+                chart_series = None
+
             base = "multiple" if len(metadata['terms']) > 1 else sanitize_name(metadata['terms'][0])
             dest_dir = identified_dir / base / (metadata['country_code'] or "WW") / metadata['datetime']
             dest_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(filepath, dest_dir / filename)
 
-            txt_content = f"""RAW_EXTRACTION:\n{json.dumps(extracted, indent=2)}\nNORMALIZED_METADATA:\n- Terms: {metadata['terms']}\n- Country: {metadata['country_name']} ({metadata['country_code'] or 'N/A'})\n- Timeframe: {metadata['timeframe']}\n- Datetime: {metadata['datetime']}\nCONFIDENCE: {confidence:.2f}\nOCR_ENGINE: qwen3-vl-2b\n"""
+            series_summary = f"{len(chart_series)} points" if chart_series else "Failed/None"
+            txt_content = f"""RAW_EXTRACTION:\n{json.dumps({k: v for k, v in extracted.items()}, indent=2)}\nCHART_TIME_SERIES: {series_summary}\nNORMALIZED_METADATA:\n- Terms: {metadata['terms']}\n- Country: {metadata['country_name']} ({metadata['country_code'] or 'N/A'})\n- Timeframe: {metadata['timeframe']}\n- Datetime: {metadata['datetime']}\nCONFIDENCE: {confidence:.2f}\nOCR_ENGINE: qwen3-vl-2b\n"""
             (dest_dir / txt_filename).write_text(txt_content, encoding='utf-8')
 
             if save_metadata_json:
@@ -357,7 +371,8 @@ def process_single(filepath: Path, identified_dir: Path, unidentified_dir: Path,
                     **metadata,
                     'ocr_confidence': confidence,
                     'ocr_engine': 'qwen3-vl-2b',
-                    'is_google_trends': True
+                    'is_google_trends': True,
+                    'chart_time_series': chart_series
                 }
                 (dest_dir / "metadata.json").write_text(
                     json.dumps(meta_json, indent=2, ensure_ascii=False),

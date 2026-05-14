@@ -1,227 +1,153 @@
-import cv2
+from PIL import Image
 import numpy as np
-import easyocr
-import json
-import os
 import sys
-from scipy import interpolate
 
-def find_grid_line_y(img, text_coords, search_x_start_offset=20):
+def extract_and_interpolate_trends(image_path: str):
     """
-    Finds the y-coordinate of the horizontal grid line associated with a text marker.
-    Handles interrupted/dashed lines by looking for the total span and density of gray pixels.
+    Final version with all requested steps:
+    - Detect chart bounding box
+    - Extract topmost blue pixel per column
+    - Remove the last value
+    - Normalize (100 at top)
+    - Shift minimum to 0
+    - Interpolate to exactly 2048 elements
     """
-    if not text_coords:
-        return None, None, None
-    
-    x, y, w, h = text_coords
-    search_x_start = x + w + search_x_start_offset
-    height, width, _ = img.shape
-    
-    y_scan_start = max(0, y - 20)
-    y_scan_end = min(height, y + h + 20)
-    
-    best_row = None
-    max_gray_pixels = 0
-    best_start_x = None
-    best_span = None
-    
-    for row_y in range(y_scan_start, y_scan_end):
-        current_gray_count = 0
-        current_min_x = -1
-        current_max_x = -1
+    # Load images
+    original = Image.open(image_path)
+    gray = np.array(original.convert('L'), dtype=np.uint8)
+    orig_h, orig_w = gray.shape
+    print(f"Original image size: {orig_w}x{orig_h}")
+
+    # Grid detection parameters
+    THRESHOLD = 245
+    MAX_THICKNESS = 5
+    MIN_SPACING = 25
+    MAX_SPACING = 45
+    SPACING_TOL = 10
+    Y_TOL = 6
+
+    def get_thin_line_clusters(col):
+        is_line = col < THRESHOLD
+        clusters = []
+        i = 0
+        while i < orig_h:
+            if is_line[i]:
+                start = i
+                while i < orig_h and is_line[i]:
+                    i += 1
+                thickness = i - start
+                if 1 <= thickness <= MAX_THICKNESS:
+                    center = (start + i - 1) // 2
+                    clusters.append(center)
+            else:
+                i += 1
+        return np.sort(np.array(clusters, dtype=int))
+
+    # === 1. Find LEFT edge ===
+    left_x = None
+    y_centers = None
+    for x in range(20, min(orig_w // 2, 400)):
+        clusters = get_thin_line_clusters(gray[:, x])
+        if len(clusters) >= 5:
+            for i in range(len(clusters) - 4):
+                sub = clusters[i:i+5]
+                diffs = np.diff(sub)
+                mean_spacing = float(np.mean(diffs))
+                if (MIN_SPACING < mean_spacing < MAX_SPACING and
+                    np.all(np.abs(diffs - mean_spacing) <= SPACING_TOL)):
+                    left_x = x
+                    y_centers = sub
+                    print(f"✅ Left edge found at x = {left_x}")
+                    print(f"   Grid y-centers: {y_centers.tolist()}")
+                    break
+        if left_x is not None:
+            break
+
+    if left_x is None or y_centers is None:
+        raise ValueError("Could not find left chart boundary.")
+
+    top = int(y_centers[0] - 3)
+    bottom = int(y_centers[-1] + 3)
+
+    # === 2. Find RIGHT edge ===
+    right_x = left_x
+    for x in range(left_x + 100, orig_w - 20):
+        clusters = get_thin_line_clusters(gray[:, x])
+        if len(clusters) >= 5:
+            for i in range(len(clusters) - 4):
+                sub = clusters[i:i+5]
+                if np.max(np.abs(sub - y_centers)) <= Y_TOL:
+                    right_x = x
+                    break
+
+    print(f"✅ Right edge found at x = {right_x}")
+
+    # === 3. Crop chart ===
+    bbox = (left_x, top, right_x, bottom)
+    cropped = original.crop(bbox)
+    cropped_array = np.array(cropped)
+    height, width = cropped_array.shape[:2]
+    print(f"Cropped chart size: {width}x{height}")
+
+    # === 4. Extract topmost colored pixel per column ===
+    timeseries_raw = []
+    for x in range(width):
+        column = cropped_array[:, x, :]
+        r, g, b = column[:, 0], column[:, 1], column[:, 2]
+
+        is_colored = (
+            (np.abs(r.astype(int) - g.astype(int)) > 20) |
+            (np.abs(r.astype(int) - b.astype(int)) > 20) |
+            (np.abs(g.astype(int) - b.astype(int)) > 20)
+        ) & (r < 200)
+
+        colored_ys = np.where(is_colored)[0]
+        if len(colored_ys) > 0:
+            topmost_y = int(np.min(colored_ys))
+            timeseries_raw.append(topmost_y)
+
+    # === Remove the last value ===
+    if len(timeseries_raw) > 0:
+        timeseries_raw = timeseries_raw[:-1]
+        print(f"   Removed last value. Raw length now: {len(timeseries_raw)}")
+
+    # === 5. Normalize (100 at top) + shift minimum to 0 ===
+    if timeseries_raw:
+        normalized = [round(100 - (y / height * 100)) for y in timeseries_raw]
         
-        for col_x in range(search_x_start, width):
-            pixel = img[row_y, col_x]
-            # Check for gray (Google Trends grid lines are light gray)
-            if abs(int(pixel[0]) - int(pixel[1])) < 15 and \
-               abs(int(pixel[1]) - int(pixel[2])) < 15 and \
-               220 < int(pixel[0]) < 250: 
-                
-                current_gray_count += 1
-                if current_min_x == -1:
-                    current_min_x = col_x
-                current_max_x = col_x
-        
-        # Threshold: A line should have a reasonable number of pixels
-        if current_gray_count > 50: 
-            # Prefer the row with the most pixels (longest line)
-            if current_gray_count > max_gray_pixels:
-                max_gray_pixels = current_gray_count
-                best_row = row_y
-                best_start_x = current_min_x
-                # Span is the distance from the first pixel to the last pixel
-                # This handles dashed lines correctly by including the gaps in the width
-                best_span = current_max_x - current_min_x
+        min_val = min(normalized)
+        final_timeseries = [x - min_val for x in normalized]
 
-    if best_row is None:
-        return None, None, None
-        
-    return best_row, best_span, best_start_x
+        print(f"   Min shifted to 0 (was {min_val})")
 
-def extract_and_interpolate_trends(image_path, output_points=1024):
-    img = cv2.imread(image_path)
-    if img is None:
-        raise FileNotFoundError(f"Error: Could not load image {image_path}")
-
-    height, width, _ = img.shape
-
-    # --- EasyOCR Initialization ---
-    # gpu=True enables hardware acceleration (CUDA, MPS, ROCm) if available.
-    # Reader downloads models on first run.
-    reader = easyocr.Reader(['en'], gpu=True)
-    
-    # Run OCR once for the whole image
-    # Returns list of: (bbox, text, confidence)
-    # bbox is [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
-    results = reader.readtext(img)
-
-    def find_text_in_results(text_target, min_y=0):
-        """
-        Searches the OCR results for a specific text string below a minimum Y coordinate.
-        """
-        for (bbox, text, conf) in results:
-            # Clean text for comparison (remove trailing periods, whitespace)
-            clean_text = text.strip().rstrip('.').lower()
-            target_clean = text_target.lower()
-            
-            if clean_text == target_clean and conf > 0.5:
-                # bbox[0] is top-left [x, y]
-                x, y = bbox[0]
-                # Calculate width and height from bbox corners
-                w = bbox[1][0] - x
-                h = bbox[2][1] - y
-                
-                if y >= min_y:
-                    return (x, y, w, h)
-        return None
-
-    # 1. Locate "Interest over time" header first
-    # We search from y=0
-    interest_header_coords = find_text_in_results("Interest over time", min_y=0)
-    
-    if not interest_header_coords:
-        raise ValueError("Error: Could not find 'Interest over time' header.")
-
-    header_x, header_y, header_w, header_h = interest_header_coords
-    
-    # Define the search area for markers: strictly below the header
-    # Add a small buffer to ensure we are past the title text
-    chart_search_min_y = header_y + header_h + 50 
-
-    # 2. Locate Markers (100, 75, 50, 25) ONLY below the header
-    markers = ['100', '75', '50', '25']
-    marker_coords = {}
-    
-    for m in markers:
-        # Pass min_y to restrict search area
-        coords = find_text_in_results(m, min_y=chart_search_min_y)
-        if coords:
-            marker_coords[m] = coords
+        # === 6. Interpolate to exactly 2048 elements ===
+        if len(final_timeseries) > 1:
+            x_old = np.linspace(0, 1, len(final_timeseries))
+            x_new = np.linspace(0, 1, 2048)
+            interpolated = np.interp(x_new, x_old, final_timeseries)
+            final_timeseries = [round(float(x)) for x in interpolated]
+            print(f"   Interpolated from {len(normalized)} to exactly 2048 values")
         else:
-            raise ValueError(f"Error: Could not find marker '{m}' below the chart header.")
+            print("Warning: Too few points for interpolation.")
 
-    # 3. Locate Grid Lines
-    grid_lines = {}
-    for m in markers:
-        if m in marker_coords:
-            y, length, start_x = find_grid_line_y(img, marker_coords[m])
-            if y is not None:
-                grid_lines[m] = {'y': y, 'length': length, 'start_x': start_x}
+        print(f"\n✅ Final interpolated timeseries with 2048 values")
+        print("Final Timeseries:")
+        print(final_timeseries)
+        return final_timeseries
+    else:
+        print("No colored pixels found!")
+        return []
 
-    # Validate we have enough lines
-    required_markers = ['100', '75', '50', '25']
-    if not all(k in grid_lines for k in required_markers):
-        raise ValueError("Error: Could not detect all necessary grid lines.")
-
-    # 4. Calculate Dimensions
-    y_100 = grid_lines['100']['y']
-    y_75 = grid_lines['75']['y']
-    y_50 = grid_lines['50']['y']
-    y_25 = grid_lines['25']['y']
-    
-    # Calculate pixel distance for 25 units
-    # Note: Y increases downwards, so higher values have smaller Y coordinates.
-    dist_25_50 = y_50 - y_25
-    dist_50_75 = y_75 - y_50
-    dist_75_100 = y_100 - y_75
-    
-    # Average unit distance to be robust
-    unit_dist = (dist_25_50 + dist_50_75 + dist_75_100) / 3.0
-    
-    # Calculate 0 position (25 units below 25)
-    y_0 = y_25 + unit_dist
-    
-    # X-axis calculation
-    start_x = min([grid_lines[k]['start_x'] for k in required_markers])
-    max_len = max([grid_lines[k]['length'] for k in required_markers])
-    end_x = start_x + max_len
-    
-    chart_x1, chart_y1 = start_x, y_100
-    chart_x2, chart_y2 = end_x, int(y_0)
-    
-    # 5. Crop the chart
-    chart_x1 = max(0, chart_x1)
-    chart_y1 = max(0, chart_y1)
-    chart_x2 = min(width, chart_x2)
-    chart_y2 = min(height, chart_y2)
-    
-    chart_crop = img[chart_y1:chart_y2, chart_x1:chart_x2]
-    
-    # 6. Scan for data points (Blue line)
-    hsv_crop = cv2.cvtColor(chart_crop, cv2.COLOR_BGR2HSV)
-    
-    # Google Trends blue is roughly #4285F4
-    lower_blue = np.array([100, 50, 50])
-    upper_blue = np.array([130, 255, 255])
-    
-    mask = cv2.inRange(hsv_crop, lower_blue, upper_blue)
-    
-    time_series_raw = []
-    chart_h, chart_w = mask.shape
-    
-    for x in range(chart_w):
-        col_pixels = mask[:, x]
-        indices = np.where(col_pixels > 0)[0]
-        
-        if len(indices) > 0:
-            avg_y = np.mean(indices)
-            # Normalize: y=0 (top of crop) is 100 value. y=chart_h (bottom) is 0 value.
-            value = 100.0 - (avg_y / float(chart_h)) * 100.0
-            time_series_raw.append(value)
-        else:
-            time_series_raw.append(None)
-
-    # 7. Interpolate
-    x_data = [i for i, v in enumerate(time_series_raw) if v is not None]
-    y_data = [v for v in time_series_raw if v is not None]
-    
-    if len(x_data) < 2:
-        raise ValueError("Error: Not enough data points found in chart.")
-
-    # Cubic interpolation provides a smooth curve
-    f = interpolate.interp1d(x_data, y_data, kind='cubic', fill_value="extrapolate")
-    
-    x_new = np.linspace(0, chart_w - 1, output_points)
-    y_new = f(x_new)
-    
-    # Clamp values
-    y_new = np.clip(y_new, 0, 100)
-    
-    final_series = y_new.tolist()
-
-    # 8. Output JSON
-    base_name = os.path.splitext(image_path)[0]
-    output_json_path = f"{base_name}.json"
-    
-    with open(output_json_path, 'w') as f:
-        json.dump(final_series, f, indent=4)
-        
-    print(f"Success: Extracted {len(final_series)} points to {output_json_path}")
-    return final_series
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        extract_and_interpolate_trends(sys.argv[1])
-    else:
-        print("Usage: python extractor.py <image_path>")
+    if len(sys.argv) < 2:
+        print("Usage: python extract_trends_timeseries.py <image_path>")
+        sys.exit(1)
+
+    image_path = sys.argv[1]
+
+    try:
+        timeseries = extract_chart_bbox_and_timeseries(image_path)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
