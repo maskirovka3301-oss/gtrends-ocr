@@ -1,5 +1,20 @@
-opencv-python>=4.8.0
-easyocr>=1.7.1
-torch>=2.0.0
-torchvision>=0.15.0
+# Core Deep Learning & VLM Framework
+torch>=2.1.0
+torchvision>=0.16.0
+transformers>=4.50.0
+accelerate>=0.34.0
+
+# Image Processing & Chart Extraction
 Pillow>=10.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# HuggingFace Ecosystem & Utilities
+huggingface-hub>=0.23.0
+pydantic>=2.0.0
+tiktoken>=0.6.0
+regex>=2023.8.0
+packaging>=23.0
+requests>=2.31.0
+qwen-vl-utils>=0.0.2
