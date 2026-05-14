@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -e
-
 ENV_NAME="gtrends-ocr"
-
 echo "🔍 Removing python=3.13 pin..."
 conda config --remove-key pinned_packages 2>/dev/null || true
 conda config --remove pinned_packages python=3.13 2>/dev/null || true
@@ -17,28 +15,27 @@ conda env remove -n "$ENV_NAME" -y 2>/dev/null || true
 
 echo "📦 Creating environment with Python 3.11..."
 conda create -n "$ENV_NAME" python=3.11 -y
+CONDA_BASE=$(conda info --base)
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda activate "$ENV_NAME"
 
-echo "🚀 Installing HuggingFace & vision model dependencies..."
-conda run -n "$ENV_NAME" pip install --upgrade pip
-conda run -n "$ENV_NAME" pip install openai requests pillow numpy opencv-python
+echo "🚀 Installing dependencies for Qwen3-VL-2B-Instruct..."
+pip install --upgrade pip
+# Transformers >= 4.50 required for full Qwen3-VL support
+pip install "transformers>=4.50" accelerate
+pip install torch torchvision
+pip install pillow opencv-python numpy qwen-vl-utils
+pip install pydantic tiktoken regex packaging huggingface-hub requests
 
-echo "🔑 Setting up HuggingFace API access..."
 echo ""
-echo "⚠️  IMPORTANT: You need a HuggingFace API token to use Kimi-K2.6"
-echo "Get one at: https://huggingface.co/settings/tokens"
+echo "✅ Environment ready!"
 echo ""
-read -p "Enter your HuggingFace API token (or press Enter to set later): " HF_TOKEN
-if [[ -n "$HF_TOKEN" ]]; then
-    echo "export HUGGINGFACE_API_KEY='$HF_TOKEN'" >> ~/.bashrc
-    export HUGGINGFACE_API_KEY="$HF_TOKEN"
-    echo "✅ Token saved to ~/.bashrc and current session"
-else
-    echo "⚠️  You'll need to set HUGGINGFACE_API_KEY environment variable before running"
-    echo "   export HUGGINGFACE_API_KEY='your_token_here'"
-fi
-
-echo "✅ Environment ready! Run: conda activate $ENV_NAME"
+echo "📝 Usage:"
+echo "   conda activate $ENV_NAME"
+echo "   ./gtrends-ocr.sh test --workers 4"
 echo ""
-echo "📝 To use the script, set your API key:"
-echo "   export HUGGINGFACE_API_KEY='hf_xxxxx'"
-echo "   ./run.sh test"
+echo "💡 Note:"
+echo "   - Model (~4.5GB) downloads ONCE to ./models/ directory"
+echo "   - First run: downloads model (~2-5 min depending on connection)"
+echo "   - Subsequent runs: load instantly from disk (offline)"
+echo "   - Requires ~4-6GB RAM during inference"

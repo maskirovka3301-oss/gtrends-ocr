@@ -1,0 +1,104 @@
+# ==========================================
+# macOS / Windows / Linux Filesystem Turds
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+*.lnk
+.directory
+*~
+
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.python-version
+.env
+.env.*
+
+# ==========================================
+# IDE & Editor Artifacts
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.project
+.pydevproject
+.settings/
+*.sublime-*
+
+# ==========================================
+# Logs & Temporary Files
+# ==========================================
+*.log
+*.tmp
+*.bak
+*.cache
+*.pid
+
+# ==========================================
+# HuggingFace & AI/ML Artifacts
+# ==========================================
+# Local model downloads (prevents committing multi-GB weights)
+models/
+checkpoints/
+outputs/
+wandb/
+mlruns/
+*.safetensors
+*.bin
+*.pt
+*.ckpt
+*.gguf
+.huggingface/
+
+# ==========================================
+# Generated Output (Runtime Folders)
+# ==========================================
+processed/
+test/
+
+# ==========================================
+# Testing, Linting & Coverage
+# ==========================================
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.ipynb_checkpoints
+coverage.xml
+.tox/
+
+# ==========================================
+# Explicitly Tracked (Do Not Ignore)
+# ==========================================
+# The following are intentionally committed to the repository:
+# README.md
+# chart_extract/
+# config/
+# gtrends-ocr.sh
+# install.sh
+# logo.jpg
+# requirements.txt
+# gtrends-ocr.py
+# (No ignore rules above match these, so Git will track them by default)
