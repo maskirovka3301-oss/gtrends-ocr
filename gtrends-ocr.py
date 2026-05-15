@@ -5,7 +5,8 @@ Google Trends Screenshot Organizer using Qwen/Qwen3-VL-2B-Instruct
 - Downloads model ONCE to ./models/ directory
 - Auto-retries with contextual hints if GTrends fields are missing
 - Injects filename-extracted datetime into the final JSON
-- Deterministic chart timeseries extraction via chart_extract module
+- Extracts chart time series via deterministic pixel scanning
+- NEW: --compile switch to merge all valid timeseries into a nested JSON structure
 """
 import os
 import re
@@ -324,6 +325,60 @@ def validate_and_normalize_metadata(extracted: Dict, filename: str) -> Optional[
         'raw_timeframe': str(raw_timeframe) if raw_timeframe else None
     }
 
+def compile_metadata_json(search_dir: str, output_path: str):
+    """Recursively scans a directory for metadata.json, filters valid timeseries, and merges into a nested JSON."""
+    identified_dir = Path(search_dir)
+    if not identified_dir.exists():
+        logging.error(f"❌ Directory '{identified_dir}' not found.")
+        return
+
+    output_file = Path(output_path)
+    compiled_data = {}
+    processed_count = 0
+    skipped_count = 0
+
+    logging.info(f"🔍 Scanning '{identified_dir}' for metadata.json files...")
+    for json_path in sorted(identified_dir.rglob("metadata.json")):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            series = data.get('chart_time_series')
+            if not isinstance(series, list) or len(series) == 0:
+                skipped_count += 1
+                continue
+
+            terms = data.get('terms', [])
+            country_code = data.get('country_code') or "WW"
+            dt = data.get('datetime', "unknown_datetime")
+
+            # Build the exact minimal payload structure requested
+            minimal_payload = {
+                "chart_time_series": series,
+                "country_name": data.get("country_name", "unknown"),
+                "original_filename": data.get("original_filename", ""),
+                "timeframe": data.get("timeframe", "unknown")
+            }
+
+            for term in terms:
+                term_key = str(term).strip()
+                if not term_key:
+                    continue
+                    
+                compiled_data.setdefault(term_key, {}).setdefault(country_code, {})[dt] = minimal_payload
+
+            processed_count += 1
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to process {json_path}: {e}")
+
+    logging.info(f"✅ Compiled {processed_count} entries (skipped {skipped_count} without valid timeseries)")
+    logging.info(f"💾 Writing nested structure to {output_file}...")
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(compiled_data, f, indent=2, ensure_ascii=False, sort_keys=True)
+
+    logging.info(f" Compilation complete: hierarchical JSON saved to {output_file}")
+
 def process_single(filepath: Path, identified_dir: Path, unidentified_dir: Path, save_metadata_json: bool = True):
     filename = filepath.name
     logging.info(f"📷 Processing: {filename}")
@@ -400,11 +455,22 @@ def process_single(filepath: Path, identified_dir: Path, unidentified_dir: Path,
 
 def main():
     parser = argparse.ArgumentParser(description="Organize Google Trends screenshots using Qwen3-VL-2B")
-    parser.add_argument("input_dir", type=str, help="Path to folder containing screenshots")
+    parser.add_argument("input_dir", nargs='?', type=str, help="Path to folder containing screenshots")
     parser.add_argument("--output_dir", type=str, default=None, help="Output folder")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
     parser.add_argument("--no-metadata-json", action="store_true", help="Skip metadata.json files")
+    parser.add_argument("--compile", nargs=2, metavar=("SEARCH_DIR", "OUTPUT_JSON"),
+                        help="Recursively compile all valid timeseries from a directory into a nested JSON file.")
     args = parser.parse_args()
+
+    # Handle --compile as a standalone post-processing step (no model loading required)
+    if args.compile:
+        compile_metadata_json(args.compile[0], args.compile[1])
+        return
+
+    if not args.input_dir:
+        parser.error("input_dir is required unless using --compile")
+        return
 
     logging.info("🔄 Loading model before processing screenshots...")
     load_model()
