@@ -8,12 +8,6 @@ Organizes Google Trends screenshots into a logical folder structure, then extrac
 
 **This project was built to counter Google's censorship practices.**
 
-## How It Works
-
-This utility combines a lightweight Vision-Language Model (VLM) with a deterministic pixel-scanning algorithm to transform raw Google Trends screenshots into structured, analyzable time-series data. The pipeline is designed to be fully autonomous, robust against compression artifacts, and optimized for forensic data reconstruction.
-
-![Example](example.png)
-
 ### Usage
 
 ```
@@ -33,6 +27,12 @@ options:
   --compile SEARCH_DIR OUTPUT_JSON
                         Recursively compile all valid timeseries from a directory into a nested JSON file.
 ```
+
+## How It Works
+
+This utility combines a lightweight Vision-Language Model (VLM) with a deterministic pixel-scanning algorithm to transform raw Google Trends screenshots into structured, analyzable time-series data. The pipeline is designed to be fully autonomous, robust against compression artifacts, and optimized for forensic data reconstruction.
+
+![Example](example.png)
 
 ### 1. Vision-Language Metadata Extraction
 The first stage uses `Qwen/Qwen3-VL-2B-Instruct` to analyze the screenshot and extract structured context:
