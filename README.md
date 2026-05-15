@@ -14,6 +14,26 @@ This utility combines a lightweight Vision-Language Model (VLM) with a determini
 
 ![Example](example.png)
 
+### Usage
+
+```
+usage: gtrends-ocr.py [-h] [--output_dir OUTPUT_DIR] [--workers WORKERS] [--no-metadata-json] [--compile SEARCH_DIR OUTPUT_JSON] [input_dir]
+
+Organize Google Trends screenshots using Qwen3-VL-2B
+
+positional arguments:
+  input_dir             Path to folder containing screenshots
+
+options:
+  -h, --help            show this help message and exit
+  --output_dir OUTPUT_DIR
+                        Output folder
+  --workers WORKERS     Number of parallel workers (default: 1)
+  --no-metadata-json    Skip metadata.json files
+  --compile SEARCH_DIR OUTPUT_JSON
+                        Recursively compile all valid timeseries from a directory into a nested JSON file.
+```
+
 ### 1. Vision-Language Metadata Extraction
 The first stage uses `Qwen/Qwen3-VL-2B-Instruct` to analyze the screenshot and extract structured context:
 
