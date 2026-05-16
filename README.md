@@ -28,6 +28,37 @@ options:
                         Recursively compile all valid timeseries from a directory into a nested JSON file.
 ```
 
+### General workflow
+
+```
+maskirovka@3301 % python gtrends-ocr.py --output_dir ./output --workers 1 ./screenshots
+...takes time while working, tool output here...
+
+2026-05-16 12:20:10,704 | INFO     | 📊 Results: 2492 identified, 352 unidentified
+
+maskirovka@3301 % python gtrends-ocr.py --compile ./output trends.json
+2026-05-16 12:21:54,951 | INFO     | 🔍 Scanning 'output' for metadata.json files...
+2026-05-16 12:21:55,344 | INFO     | ✅ Compiled 2490 entries (skipped 2 without valid timeseries)
+2026-05-16 12:21:55,344 | INFO     | 💾 Writing nested structure to trends.json...
+2026-05-16 12:21:55,725 | INFO     |  Compilation complete: hierarchical JSON saved to trends.json
+
+maskirovka@3301 % ls -lh trends.json
+-rw-r--r--@ 1 daniel  staff    35M May 16 12:21 trends.json
+
+maskirovka@3301 % cat trends.json | head -n10
+{
+  "Donald Trump": {
+    "CN": {
+      "2026-02-14_05-07-41": {
+        "chart_time_series": [
+          0,
+          0,
+          0,
+          0,
+          0,
+```
+
+
 ## How It Works
 
 This utility combines a lightweight Vision-Language Model (VLM) with a deterministic pixel-scanning algorithm to transform raw Google Trends screenshots into structured, analyzable time-series data. The pipeline is designed to be fully autonomous, robust against compression artifacts, and optimized for forensic data reconstruction.
@@ -87,6 +118,7 @@ All extracted data remains local, offline-capable, and fully exportable for stat
 - Only tested for now with Classic Google Trends, not screenshots from the new AI version.
 - Work is still being done on the ability to extract time series from multi-keyword (comparison) screenshots - this is hard because the trend lines intersect and obscure each other.
 - Currently only MacOS is supported and tested, future work will make it more portable.
+- The deterministic chart digitization algorithm has a bug where it misidentifies the actual start of the timeseries, leading to 1-3 zeros and the actual data having values that start from 1, this will be fixed first.
 
 ---
 
