@@ -123,3 +123,5 @@ All extracted data remains local, offline-capable, and fully exportable for stat
 ---
 
 For all inquiries please email: maskirovka3301@gmail.com
+
+If you like this tool, please give the repository on GitHub a star :)
