@@ -132,7 +132,7 @@ For inquiries regarding algorithmic manipulation research, or technical support:
 
 ## Disclaimer
 
-This tool is provided for research, transparency, and accountability purposes. Users are responsible for compliance with all applicable laws and terms of service. The author makes no claims about the accuracy or completeness of data collected. The statistical inferences presented represent exploratory analysis requiring independent verification.
+This tool is provided for research, transparency, and accountability purposes. Users are responsible for compliance with all applicable laws and terms of service.
 
 ---
 
