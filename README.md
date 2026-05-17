@@ -126,7 +126,7 @@ MIT License - See LICENSE file for details.
 
 ## Contact
 
-For inquiries regarding the April 29, 2026 whistleblower disclosure, algorithmic pruning research, or technical support:
+For inquiries regarding algorithmic manipulation research, or technical support:
 
 **Email**: maskirovka3301@gmail.com  
 
