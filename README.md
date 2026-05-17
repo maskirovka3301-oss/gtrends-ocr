@@ -120,8 +120,22 @@ All extracted data remains local, offline-capable, and fully exportable for stat
 - Currently only MacOS is supported and tested, future work will make it more portable.
 - The deterministic chart digitization algorithm has a bug where it misidentifies the actual start of the timeseries, leading to 1-3 zeros and the actual data having values that start from 1, this will be fixed first.
 
+## License
+
+MIT License - See LICENSE file for details.
+
+## Contact
+
+For inquiries regarding the April 29, 2026 whistleblower disclosure, algorithmic pruning research, or technical support:
+
+**Email**: maskirovka3301@gmail.com  
+
+## Disclaimer
+
+This tool is provided for research, transparency, and accountability purposes. Users are responsible for compliance with all applicable laws and terms of service. The author makes no claims about the accuracy or completeness of data collected. The statistical inferences presented represent exploratory analysis requiring independent verification.
+
 ---
 
-For all inquiries please email: maskirovka3301@gmail.com
+**If you find this tool valuable for documenting platform manipulation, please give the repository a star.**
 
-If you like this tool, please give the repository on GitHub a star :)
+*Preserving evidence is the first step toward accountability.*
